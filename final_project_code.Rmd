@@ -14,6 +14,14 @@ library(readxl)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(car)
+library(lmtest)
+library(orcutt)
+library(sandwich)
+library(stargazer)
+```
+
+```{r}
 income <- read_excel("CLASS.xls", skip = 3)[-1,] %>% select(Economy, `Income group`)
 names(income)[1:2] <- c("Country","Income")
 
@@ -37,11 +45,35 @@ names(WBNarrow)[4:8] <-
 
 WBNarrow <- left_join(WBNarrow, income)
 WBNarrow$Year <- as.numeric(WBNarrow$Year)
+```
 
-CPI <- read.csv("CPI.csv") %>% select(-1)
-names(CPI)[1] <- "Country"
+## CPI Index
 
-WBNarrow <- left_join(WBNarrow, CPI)
+```{r}
+cpi_2017 <- read_excel("CPI2017_FullDataSet.xlsx", skip=2)
+cpi_2017 <- cpi_2017 %>% select(1,4)
+names(cpi_2017)[2] = "2017"
+
+cpi_2016 <- read_excel("CPI2016_FullDataSetWithRegionalTables.xlsx")
+cpi_2016 <- cpi_2016 %>% select(1:2)
+colnames(cpi_2016)[2] = "2016"
+
+cpi_2016_17 <- full_join(cpi_2016,cpi_2017, by = "Country")
+cpi_2016_17 <- cpi_2016_17[-(181:182),]
+
+cpi_1998_2015 <- read_excel("CPI1998-2015.xlsx")
+cpi_total <- full_join(cpi_1998_2015, cpi_2016_17, by = "Country")
+
+cpi_total[,2:21] <- sapply(cpi_total[,2:21],as.numeric)
+
+cpi_total <- cpi_total %>% mutate_at(.vars = vars(names(cpi_total)[2:15]), funs(.*10))
+
+CPI <- gather(data = cpi_total, key = Year, value = CPI, 2:21)
+CPI$Year <- as.numeric(CPI$Year)
+```
+
+```{r}
+allData <- left_join(WBNarrow, CPI)
 ```
 
 These are the names of the variables:
@@ -51,22 +83,22 @@ These are the names of the variables:
 "Government expenditure on education, total (% of government expenditure)"                       
 "Gross capital formation (% of GDP)"                                                             
 "Trade (% of GDP)"
-
 "Corruption Perception Index"
 
 ## Growth v. Education
 
 ```{r}
-ggplot(WBNarrow, aes(x = Education, y = Growth)) + 
+ggplot(allData, aes(x = Education, y = Growth)) + 
   geom_point() +
   geom_smooth(method = "lm") + 
+  scale_x_continuous(limits = c(0,25)) +
   labs(x = "Education Expenditure (% of Govt Expenditure)", y = "Annual Growth Rate per Capita (%)", title = "Growth Rate v. Education Expenditure")
 ```
 
 ## Fixed Effect
 
 ```{r}
-ggplot(WBNarrow, aes(x = Education, y = Growth, color = Income)) + 
+ggplot(allData, aes(x = Education, y = Growth, color = Income)) + 
   geom_smooth(method = "lm") + 
   labs(x = "Education Expenditure (% of Govt Expenditure)", y = "Annual Growth Rate per Capita (%)", title = "Growth Rate v. Education Expenditure")
 ```
@@ -74,55 +106,50 @@ ggplot(WBNarrow, aes(x = Education, y = Growth, color = Income)) +
 ## Necessary Transformation
 
 ```{r}
-scatterplotMatrix(WBNarrow[4:8])
+scatterplotMatrix(allData[c(4:8,10)])
 ```
 
 ## Model
 
 ```{r}
-bivariate.lm <- lm(Growth~Education, data = WBNarrow)
+bivariate.lm <- lm(Growth~Education, data = allData)
 summary(bivariate.lm)
 
-growth.lm <- lm(Growth ~ log(Trade) + Health + Capital + CPI+ factor(Income) + Education, data = na.omit(WBNarrow))
+growth.lm <- lm(Growth ~ log(Trade) + Health + Capital + CPI + factor(Income) + Education, data = na.omit(allData))
 summary(growth.lm)
 ```
 
 ## Multicollinearity
 
 ```{r}
-library(car)
 vif(growth.lm)
 ```
 
 ## Heteroscedasity
 
 ```{r}
-ggplot(growth.lm, aes(x=na.omit(WBNarrow)$Education, y=.resid)) + 
+ggplot(growth.lm, aes(x=na.omit(allData)$Education, y=.resid)) + 
   geom_jitter() +
   geom_hline(yintercept=0, col="red", linetype="dashed") +
   labs(title = "Residual vs Year", x="Year", y = "Residuals")
 
-library(lmtest)
-gqtest(growth.lm, fraction = 4, order.by = na.omit(WBNarrow)$Education)
+gqtest(growth.lm, fraction = 4, order.by = na.omit(allData)$Education)
 ```
 
 ## Autocorrelation
 
 ```{r}
-ggplot(growth.lm, aes(x=na.omit(WBNarrow)$Year, y=.resid)) + 
+ggplot(growth.lm, aes(x=na.omit(allData)$Year, y=.resid)) + 
   geom_jitter() +
   geom_hline(yintercept=0, col="red", linetype="dashed") +
   labs(title = "Residual vs Year", x="Year", y = "Residuals")
 
-dwtest(growth.lm, order.by = na.omit(WBNarrow)$Year)
-bgtest(growth.lm, order.by = na.omit(WBNarrow)$Year)
+dwtest(growth.lm, order.by = na.omit(allData)$Year)
+bgtest(growth.lm, order.by = na.omit(allData)$Year)
 
-library(orcutt)
 growth.orcutt <- cochrane.orcutt(growth.lm)
 summary.orcutt(growth.orcutt)
 
-library(sandwich)
-library(stargazer)
 growth.newey <- coeftest(growth.lm, vcov = NeweyWest(growth.lm))
 growth.newey
 ```
