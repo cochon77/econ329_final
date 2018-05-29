@@ -2,7 +2,7 @@
 title: "final_project"
 author: "Colin Pi"
 date: '2018 5 28 '
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -138,7 +138,7 @@ Trade variable may be logged. Except that there is no need to transformation. Al
 
 ## Model
 
-### Bivariate Model (Growth v. Education)
+#### Bivariate Model (Growth v. Education) ####
 
 ```{r}
 bivariate.lm <- lm(Growth~Education, data = allData)
@@ -147,14 +147,14 @@ summary(bivariate.lm)
 
 We can see a significant positive relation between both variables. 
 
-### Full model
+#### Full model ####
 
 ```{r}
 growth.lm <- lm(Growth ~ log(Trade) + Health + Capital + CPI + factor(Income) + Education, data = allData)
 summary(growth.lm)
 ```
 
-### Restricted model
+#### Restricted model ####
 
 ```{r}
 growth.lm2 <- lm(Growth ~ Health + Capital + CPI + factor(Income) + Education, data = na.omit(allData))
@@ -173,7 +173,7 @@ No evidence of multicollinearity.
 
 ## Heteroscedasity
 
-### Graphical Method
+#### Graphical Method ####
 
 ```{r}
 ggplot(growth.lm2, aes(x=na.omit(allData)$Education, y=.resid)) + 
@@ -184,7 +184,7 @@ ggplot(growth.lm2, aes(x=na.omit(allData)$Education, y=.resid)) +
 
 Not sure whether there is a notable heteroscedasity issue. 
 
-### GQ test
+#### GQ test ####
 
 ```{r}
 gqtest(growth.lm2, fraction = 4, order.by = na.omit(allData)$Education)
@@ -196,7 +196,7 @@ We can find the evidence of heteroscedasity.
 
 Because it is a timeseries data, we may suspect there is the autocorrelation issue. 
 
-### Graphical Methods
+#### Graphical Methods ####
 
 ```{r}
 ggplot(growth.lm2, aes(x=na.omit(allData)$Year, y=.resid)) + 
@@ -205,14 +205,14 @@ ggplot(growth.lm2, aes(x=na.omit(allData)$Year, y=.resid)) +
   labs(title = "Residual vs Year", x="Year", y = "Residuals")
 ```
 
-### Durbin-Watson, BG test
+#### Durbin-Watson, BG test ####
 
 ```{r}
 dwtest(growth.lm2, order.by = na.omit(allData)$Year)
 bgtest(growth.lm2, order.by = na.omit(allData)$Year)
 ```
 
-### Cochrane Orcutt
+#### Cochrane Orcutt ####
 
 ```{r}
 growth.orcutt <- cochrane.orcutt(growth.lm2)
@@ -221,7 +221,7 @@ summary.orcutt(growth.orcutt)
 
 The problem with Cochrane Orcutt is that we cannot address for heteroscedasity.
 
-### Newey West
+#### Newey West ####
 
 ```{r}
 growth.newey <- coeftest(growth.lm2, vcov = NeweyWest(growth.lm))
