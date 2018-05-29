@@ -15,6 +15,9 @@ library(sandwich)
 library(stargazer)
 ```
 
+World Bank Data
+---------------
+
 ``` r
 ## Import the income classification data of countries coded by World Bank
 income <- read_excel("CLASS.xls", skip = 3)[-1,] %>% select(Economy, `Income group`)
@@ -87,6 +90,9 @@ CPI <- gather(data = cpi_total, key = Year, value = CPI, 2:21)
 ## Change Year variable into numeric from character
 CPI$Year <- as.numeric(CPI$Year)
 ```
+
+Complied Data
+-------------
 
 ``` r
 ## Join World Bank Data and CPI into one data frame.
