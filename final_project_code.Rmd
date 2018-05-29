@@ -126,6 +126,3 @@ library(stargazer)
 growth.newey <- coeftest(growth.lm, vcov = NeweyWest(growth.lm))
 growth.newey
 ```
-
-
-
