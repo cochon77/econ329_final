@@ -1,2 +1,2 @@
 # econ329_final
-Colin, Varit, and Kanin
+Repository for ECON 329 Final (Colin, Varit, Kanin)
