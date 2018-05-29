@@ -1,0 +1,131 @@
+---
+title: "final_project"
+author: "Colin Pi"
+date: '2018 5 28 '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+income <- read_excel("CLASS.xls", skip = 3)[-1,] %>% select(Economy, `Income group`)
+names(income)[1:2] <- c("Country","Income")
+
+WBData <- read.csv("WBData.csv")[-c(131:135),]
+names(WBData)[5:62] <- seq(1960,2017)
+names(WBData)[3:4] <- c("Country","Code")
+
+narrow <- function(i){
+  outcome <- gather(WBData %>% filter(Series.Name == levels(WBData$Series.Name)[i]), key = Year, value = UQ(levels(WBData$Series.Name)[i]), 5:62) %>% select(6)
+  return(outcome)
+}
+
+WBNarrow <- gather(WBData %>% 
+                     filter(Series.Name == levels(WBData$Series.Name)[2]), 
+                   key = Year, value = UQ(levels(WBData$Series.Name)[2]), 5:62) %>% 
+  select(-c(1:2)) %>% bind_cols(lapply(c(3,5:6,8), narrow) %>% bind_cols())
+
+WBNarrow[,4:8] <- sapply(WBNarrow[,4:8], as.numeric)
+names(WBNarrow)[4:8] <- 
+  c("Growth", "Health","Education", "Capital", "Trade")
+
+WBNarrow <- left_join(WBNarrow, income)
+WBNarrow$Year <- as.numeric(WBNarrow$Year)
+
+CPI <- read.csv("CPI.csv") %>% select(-1)
+names(CPI)[1] <- "Country"
+
+WBNarrow <- left_join(WBNarrow, CPI)
+```
+
+These are the names of the variables:
+
+"Adjusted net national income per capita (annual % growth)"                                      
+"Current health expenditure (% of GDP)"                                                          
+"Government expenditure on education, total (% of government expenditure)"                       
+"Gross capital formation (% of GDP)"                                                             
+"Trade (% of GDP)"
+
+"Corruption Perception Index"
+
+## Growth v. Education
+
+```{r}
+ggplot(WBNarrow, aes(x = Education, y = Growth)) + 
+  geom_point() +
+  geom_smooth(method = "lm") + 
+  labs(x = "Education Expenditure (% of Govt Expenditure)", y = "Annual Growth Rate per Capita (%)", title = "Growth Rate v. Education Expenditure")
+```
+
+## Fixed Effect
+
+```{r}
+ggplot(WBNarrow, aes(x = Education, y = Growth, color = Income)) + 
+  geom_smooth(method = "lm") + 
+  labs(x = "Education Expenditure (% of Govt Expenditure)", y = "Annual Growth Rate per Capita (%)", title = "Growth Rate v. Education Expenditure")
+```
+
+## Necessary Transformation
+
+```{r}
+scatterplotMatrix(WBNarrow[4:8])
+```
+
+## Model
+
+```{r}
+bivariate.lm <- lm(Growth~Education, data = WBNarrow)
+summary(bivariate.lm)
+
+growth.lm <- lm(Growth ~ log(Trade) + Health + Capital + CPI+ factor(Income) + Education, data = na.omit(WBNarrow))
+summary(growth.lm)
+```
+
+## Multicollinearity
+
+```{r}
+library(car)
+vif(growth.lm)
+```
+
+## Heteroscedasity
+
+```{r}
+ggplot(growth.lm, aes(x=na.omit(WBNarrow)$Education, y=.resid)) + 
+  geom_jitter() +
+  geom_hline(yintercept=0, col="red", linetype="dashed") +
+  labs(title = "Residual vs Year", x="Year", y = "Residuals")
+
+library(lmtest)
+gqtest(growth.lm, fraction = 4, order.by = na.omit(WBNarrow)$Education)
+```
+
+## Autocorrelation
+
+```{r}
+ggplot(growth.lm, aes(x=na.omit(WBNarrow)$Year, y=.resid)) + 
+  geom_jitter() +
+  geom_hline(yintercept=0, col="red", linetype="dashed") +
+  labs(title = "Residual vs Year", x="Year", y = "Residuals")
+
+dwtest(growth.lm, order.by = na.omit(WBNarrow)$Year)
+bgtest(growth.lm, order.by = na.omit(WBNarrow)$Year)
+
+library(orcutt)
+growth.orcutt <- cochrane.orcutt(growth.lm)
+summary.orcutt(growth.orcutt)
+
+library(sandwich)
+library(stargazer)
+growth.newey <- coeftest(growth.lm, vcov = NeweyWest(growth.lm))
+growth.newey
+```
+
+
+
