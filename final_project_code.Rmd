@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, message=FALSE}
 library(readxl)
 library(dplyr)
 library(tidyr)
@@ -21,73 +21,98 @@ library(sandwich)
 library(stargazer)
 ```
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
+## Import the income classification data of countries coded by World Bank
 income <- read_excel("CLASS.xls", skip = 3)[-1,] %>% select(Economy, `Income group`)
 names(income)[1:2] <- c("Country","Income")
 
+## Import World Bank Data and make some adjustment in variable names, such as year variables and country code. 
 WBData <- read.csv("WBData.csv")[-c(131:135),]
 names(WBData)[5:62] <- seq(1960,2017)
 names(WBData)[3:4] <- c("Country","Code")
 
+## Function of making wide version of data into narrower version
 narrow <- function(i){
   outcome <- gather(WBData %>% filter(Series.Name == levels(WBData$Series.Name)[i]), key = Year, value = UQ(levels(WBData$Series.Name)[i]), 5:62) %>% select(6)
   return(outcome)
 }
 
+## Create a narrow version of World Bank Data
 WBNarrow <- gather(WBData %>% 
                      filter(Series.Name == levels(WBData$Series.Name)[2]), 
                    key = Year, value = UQ(levels(WBData$Series.Name)[2]), 5:62) %>% 
   select(-c(1:2)) %>% bind_cols(lapply(c(3,5:6,8), narrow) %>% bind_cols())
 
+## Coerce the character variable into numeric
 WBNarrow[,4:8] <- sapply(WBNarrow[,4:8], as.numeric)
+
+## Change the variable names in forms can be used for modeling
 names(WBNarrow)[4:8] <- 
   c("Growth", "Health","Education", "Capital", "Trade")
 
+## Join the World Bank Data and Income data
 WBNarrow <- left_join(WBNarrow, income)
+
+## Coerce the character variable into numeric
 WBNarrow$Year <- as.numeric(WBNarrow$Year)
 ```
 
 ## CPI Index
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
+## Import CPI data of 2017
 cpi_2017 <- read_excel("CPI2017_FullDataSet.xlsx", skip=2)
 cpi_2017 <- cpi_2017 %>% select(1,4)
 names(cpi_2017)[2] = "2017"
 
+## Import CPI data of 2016
 cpi_2016 <- read_excel("CPI2016_FullDataSetWithRegionalTables.xlsx")
 cpi_2016 <- cpi_2016 %>% select(1:2)
 colnames(cpi_2016)[2] = "2016"
 
+## Join CPI data of 2016 and 2017
 cpi_2016_17 <- full_join(cpi_2016,cpi_2017, by = "Country")
 cpi_2016_17 <- cpi_2016_17[-(181:182),]
 
+## Import CPI data of 1998-2015
 cpi_1998_2015 <- read_excel("CPI1998-2015.xlsx")
+
+## Join CPI data of 1998-2015 and 2016-17
 cpi_total <- full_join(cpi_1998_2015, cpi_2016_17, by = "Country")
 
+## Since numeric data are framed as character, we changed them into numeric
 cpi_total[,2:21] <- sapply(cpi_total[,2:21],as.numeric)
 
+## The scale of CPI from 1998-2015 is out of 10, but it changed to out of 100 from 2012. So we changed the scale to out of 100.
 cpi_total <- cpi_total %>% mutate_at(.vars = vars(names(cpi_total)[2:15]), funs(.*10))
 
+## Create the narrow version of the CPI data
 CPI <- gather(data = cpi_total, key = Year, value = CPI, 2:21)
+
+## Change Year variable into numeric from character
 CPI$Year <- as.numeric(CPI$Year)
 ```
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
+## Join World Bank Data and CPI into one data frame.
 allData <- left_join(WBNarrow, CPI)
 ```
 
-These are the names of the variables:
+Dependent Variable
+Growth: "Adjusted net national income per capita (annual % growth)"
 
-"Adjusted net national income per capita (annual % growth)"                                      
-"Current health expenditure (% of GDP)"                                                          
-"Government expenditure on education, total (% of government expenditure)"                       
-"Gross capital formation (% of GDP)"                                                             
-"Trade (% of GDP)"
-"Corruption Perception Index"
+Independent Variable
+Education: "Government expenditure on education, total (% of government expenditure)"
+
+Control Variable
+Health: "Current health expenditure (% of GDP)"                                                          
+Capital: "Gross capital formation (% of GDP)"                                                             
+Trade: "Trade (% of GDP)"
+CPI: "Corruption Perception Index"
 
 ## Growth v. Education
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 ggplot(allData, aes(x = Education, y = Growth)) + 
   geom_point() +
   geom_smooth(method = "lm") + 
@@ -97,59 +122,110 @@ ggplot(allData, aes(x = Education, y = Growth)) +
 
 ## Fixed Effect
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 ggplot(allData, aes(x = Education, y = Growth, color = Income)) + 
   geom_smooth(method = "lm") + 
   labs(x = "Education Expenditure (% of Govt Expenditure)", y = "Annual Growth Rate per Capita (%)", title = "Growth Rate v. Education Expenditure")
 ```
 
-## Necessary Transformation
+## Check for Necessary Transformation and Potential Multicollinearity
 
 ```{r}
 scatterplotMatrix(allData[c(4:8,10)])
 ```
 
+Trade variable may be logged. Except that there is no need to transformation. Also there seems no multicollinearity issue either. 
+
 ## Model
+
+### Bivariate Model (Growth v. Education)
 
 ```{r}
 bivariate.lm <- lm(Growth~Education, data = allData)
 summary(bivariate.lm)
+```
 
-growth.lm <- lm(Growth ~ log(Trade) + Health + Capital + CPI + factor(Income) + Education, data = na.omit(allData))
+We can see a significant positive relation between both variables. 
+
+### Full model
+
+```{r}
+growth.lm <- lm(Growth ~ log(Trade) + Health + Capital + CPI + factor(Income) + Education, data = allData)
 summary(growth.lm)
 ```
+
+### Restricted model
+
+```{r}
+growth.lm2 <- lm(Growth ~ Health + Capital + CPI + factor(Income) + Education, data = na.omit(allData))
+summary(growth.lm2)
+```
+
+We got rid of the Trade variable (the p-value for this coefficient is too big).
 
 ## Multicollinearity
 
 ```{r}
-vif(growth.lm)
+vif(growth.lm2)
 ```
+
+No evidence of multicollinearity. 
 
 ## Heteroscedasity
 
+### Graphical Method
+
 ```{r}
-ggplot(growth.lm, aes(x=na.omit(allData)$Education, y=.resid)) + 
+ggplot(growth.lm2, aes(x=na.omit(allData)$Education, y=.resid)) + 
   geom_jitter() +
   geom_hline(yintercept=0, col="red", linetype="dashed") +
-  labs(title = "Residual vs Year", x="Year", y = "Residuals")
-
-gqtest(growth.lm, fraction = 4, order.by = na.omit(allData)$Education)
+  labs(title = "Residual vs Education", x="Education", y = "Residuals")
 ```
+
+Not sure whether there is a notable heteroscedasity issue. 
+
+### GQ test
+
+```{r}
+gqtest(growth.lm2, fraction = 4, order.by = na.omit(allData)$Education)
+```
+
+We can find the evidence of heteroscedasity. 
 
 ## Autocorrelation
 
+Because it is a timeseries data, we may suspect there is the autocorrelation issue. 
+
+### Graphical Methods
+
 ```{r}
-ggplot(growth.lm, aes(x=na.omit(allData)$Year, y=.resid)) + 
+ggplot(growth.lm2, aes(x=na.omit(allData)$Year, y=.resid)) + 
   geom_jitter() +
   geom_hline(yintercept=0, col="red", linetype="dashed") +
   labs(title = "Residual vs Year", x="Year", y = "Residuals")
+```
 
-dwtest(growth.lm, order.by = na.omit(allData)$Year)
-bgtest(growth.lm, order.by = na.omit(allData)$Year)
+### Durbin-Watson, BG test
 
-growth.orcutt <- cochrane.orcutt(growth.lm)
+```{r}
+dwtest(growth.lm2, order.by = na.omit(allData)$Year)
+bgtest(growth.lm2, order.by = na.omit(allData)$Year)
+```
+
+### Cochrane Orcutt
+
+```{r}
+growth.orcutt <- cochrane.orcutt(growth.lm2)
 summary.orcutt(growth.orcutt)
+```
 
-growth.newey <- coeftest(growth.lm, vcov = NeweyWest(growth.lm))
+The problem with Cochrane Orcutt is that we cannot address for heteroscedasity.
+
+### Newey West
+
+```{r}
+growth.newey <- coeftest(growth.lm2, vcov = NeweyWest(growth.lm))
 growth.newey
 ```
+
+Newey West deals with both heteroscedasity and autocorrelation. The problem is the Orcutt model is better than this version. Still Education coefficient is significant.
